@@ -594,26 +594,14 @@ class InboxTuiApp(App[int]):
         if row is None or row_index is None:
             self.notify("No row selected")
             return
-        row = self._drop_row_from_table(row_index, celebrate_on_empty=False)
-        self._update_ui()
         path = await self._pick_at_row(row)
         if path is None:
-            self._restore_row_at(row_index, row)
-            self._update_ui()
             return
         self.action_row = row
-        self.open_row_index = None
+        self.open_row_index = row_index
         self.reply_path = path
         self.mode = "action"
         self._update_ui()
-
-        async def mark_opened_read() -> None:
-            try:
-                await asyncio.to_thread(mark_read_inbox_row, row)
-            except (RuntimeError, ValueError, KeyError, FileNotFoundError) as exc:
-                self.notify(str(exc), severity="error", timeout=6)
-
-        self.run_worker(mark_opened_read, exclusive=False, group="mark_read")
 
         if self.editor.opens:
 
@@ -713,8 +701,6 @@ class InboxTuiApp(App[int]):
         finally:
             self._clear_busy()
         self._remove_open_row_after_send()
-        if not self.rows:
-            self._schedule_inbox_zero_celebration()
 
     def action_push_send(self) -> None:
         if self._busy_message:
@@ -739,24 +725,19 @@ class InboxTuiApp(App[int]):
         finally:
             self._clear_busy()
         self._remove_open_row_after_send()
-        if not self.rows:
-            self._schedule_inbox_zero_celebration()
 
     def _remove_open_row_after_send(self) -> None:
         """Drop thread from inbox after send/draft (Gmail marked read in push_*)."""
         if self.open_row_index is None:
-            self.mode = "browse"
-            self.reply_path = None
-            self._update_ui()
+            self.action_back_to_browse()
             return
         row_index = self.open_row_index
-        if 0 <= row_index < len(self.rows):
-            del self.rows[row_index]
-            try:
-                self._sync_session_from_rows()
-            except OSError as exc:
-                self.notify(f"Session save failed: {exc}", severity="warning")
-        self._apply_table_ui()
+        self.open_row_index = None
+        self.action_row = None
+        self.reply_path = None
+        self.mode = "browse"
+        self._drop_row_from_table(row_index)
+        self._update_ui()
 
 
 def run_textual_inbox_session(

@@ -1,7 +1,6 @@
 # Bugs
 
 ## Reply behaviour
-- When I've press enter to open Obsidian to compose a reply the email disappears from the table, is this the intended behaviour? I thought it only disappeared once I send the reply
 - When I've press enter to open Obsidian to compose a reply I see the options in the TUI to send the email and do other tasks. I can press escape to get rid of this but escape isn't shown in the available options
 - If the email is to multiple people then the default behaviour should be reply to all rather than just reply to the sender
 

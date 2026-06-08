@@ -42,7 +42,7 @@ def test_enter_does_not_show_opening_reply_busy(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
-def test_enter_removes_row_before_slow_pick(tmp_path: Path) -> None:
+def test_enter_keeps_row_during_slow_pick(tmp_path: Path) -> None:
     reply = tmp_path / "reply.md"
     reply.write_text("x")
 
@@ -56,13 +56,12 @@ def test_enter_removes_row_before_slow_pick(tmp_path: Path) -> None:
             async with app.run_test() as pilot:
                 await pilot.press("enter")
                 await pilot.pause(delay=0.08)
-        assert len(app.rows) == 1
-        assert app.rows[0].subject == "Two"
+        assert len(app.rows) == 2
 
     asyncio.run(run())
 
 
-def test_enter_opens_row_and_removes_from_table(tmp_path: Path) -> None:
+def test_enter_opens_row_and_keeps_in_table(tmp_path: Path) -> None:
     reply = tmp_path / "reply.md"
     reply.write_text("x")
 
@@ -70,15 +69,35 @@ def test_enter_opens_row_and_removes_from_table(tmp_path: Path) -> None:
         app = InboxTuiApp(tmp_path, [_row(), _row("Two")], editor=EditorConfig.none())
         with (
             patch("email_inbox.textual_picker.pick_inbox_row_flow", return_value=reply),
-            patch("email_inbox.textual_picker.mark_read_inbox_row"),
+            patch("email_inbox.textual_picker.mark_read_inbox_row") as mark_read,
         ):
             async with app.run_test() as pilot:
                 await pilot.press("enter")
                 await pilot.pause(delay=0.3)
         assert app.mode == "action"
         assert app.reply_path == reply
-        assert len(app.rows) == 1
-        assert app.rows[0].subject == "Two"
+        assert app.open_row_index == 0
+        assert len(app.rows) == 2
+        mark_read.assert_not_called()
+
+    asyncio.run(run())
+
+
+def test_escape_from_action_keeps_row_in_table(tmp_path: Path) -> None:
+    reply = tmp_path / "reply.md"
+    reply.write_text("x")
+
+    async def run() -> None:
+        app = InboxTuiApp(tmp_path, [_row(), _row("Two")], editor=EditorConfig.none())
+        with patch("email_inbox.textual_picker.pick_inbox_row_flow", return_value=reply):
+            async with app.run_test() as pilot:
+                await pilot.press("enter")
+                await pilot.pause()
+                await pilot.press("escape")
+                await pilot.pause()
+        assert app.mode == "browse"
+        assert len(app.rows) == 2
+        assert app.reply_path is None
 
     asyncio.run(run())
 
