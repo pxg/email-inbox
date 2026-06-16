@@ -11,10 +11,12 @@ from email_inbox.accounts import AccountsConfig, Mailbox
 from email_inbox.formatting import InboxRow
 from email_inbox.gog import (
     GogError,
+    auth_warning,
     authorized_gmail_accounts,
     enrich_multi_message_rows,
     gmail_search_unread,
     inbox_row_message_fields_from_search,
+    is_auth_error,
 )
 
 
@@ -64,7 +66,10 @@ def fetch_combined_inbox(
             try:
                 rows = future.result()
             except GogError as exc:
-                search_errors.append(f"{mb.address}: {exc}")
+                if is_auth_error(str(exc)):
+                    auth_warnings.append(auth_warning(mb.address, str(exc)))
+                else:
+                    search_errors.append(f"{mb.address}: {exc}")
                 continue
             for row in rows:
                 key = (row.mailbox, row.thread_id)

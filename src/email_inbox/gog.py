@@ -14,6 +14,17 @@ if TYPE_CHECKING:
     from email_inbox.formatting import InboxRow
 
 GOG_TIMEOUT_SEC = 60
+_AUTH_ERROR_MARKERS = (
+    "invalid_grant",
+    "token has been expired or revoked",
+    "token expired",
+    "expired or revoked",
+    "reauth",
+    "authentication required",
+    "please login",
+    "unauthorized_client",
+    "401",
+)
 
 def authorized_gmail_accounts() -> set[str]:
     result = subprocess.run(
@@ -300,3 +311,15 @@ class GogError(Exception):
     def __init__(self, mailbox: str, message: str) -> None:
         self.mailbox = mailbox
         super().__init__(message)
+
+
+def is_auth_error(message: str) -> bool:
+    """Return True when gog stderr indicates auth/token problems."""
+    lowered = message.strip().lower()
+    return any(marker in lowered for marker in _AUTH_ERROR_MARKERS)
+
+
+def auth_warning(mailbox: str, message: str) -> str:
+    """Actionable warning for expired/invalid Gog OAuth tokens."""
+    hint = f"gog auth add {mailbox} --services gmail"
+    return f"{mailbox} authentication expired/invalid, run: {hint} ({message})"

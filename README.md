@@ -97,3 +97,11 @@ uv run pytest
 ```
 
 After dependency changes: `uv sync` then `uv tool install --force -e .`
+
+## Troubleshooting auth
+
+If an account token expires, `inbox list` now prints an auth warning with a ready-to-run reauth command, for example:
+
+```bash
+pete@petegraham.co.uk authentication expired/invalid, run: gog auth add pete@petegraham.co.uk --services gmail
+```

@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from email_inbox.accounts import AccountsConfig, Mailbox
+from email_inbox.gog import GogError
 from email_inbox.list_inbox import fetch_combined_inbox
 
 
@@ -79,3 +80,21 @@ def test_skip_unauthorized(auth_mock) -> None:
         result = fetch_combined_inbox(_config())
     assert len(result.auth_warnings) == 1
     assert "b@co.uk" in result.auth_warnings[0]
+
+
+@patch("email_inbox.list_inbox.authorized_gmail_accounts")
+def test_expired_token_promoted_to_auth_warning(auth_mock) -> None:
+    auth_mock.return_value = {"a@gmail.com", "b@co.uk"}
+
+    def search_side_effect(mailbox: str, **kwargs):
+        if mailbox == "b@co.uk":
+            raise GogError(mailbox, "invalid_grant: Token has been expired or revoked")
+        return []
+
+    with patch("email_inbox.list_inbox.gmail_search_unread", side_effect=search_side_effect):
+        result = fetch_combined_inbox(_config())
+
+    assert result.search_errors == []
+    assert len(result.auth_warnings) == 1
+    assert "b@co.uk authentication expired/invalid" in result.auth_warnings[0]
+    assert "gog auth add b@co.uk --services gmail" in result.auth_warnings[0]
