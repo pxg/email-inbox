@@ -1,10 +1,12 @@
-# inbox-cli
+# Email Inbox
 
-Gmail unread inbox TUI via [gog](https://github.com/steipete/gog), with reply drafts in your Obsidian vault.
+Gmail unread inbox TUI via [gog](https://github.com/steipete/gog). Pick a thread, draft a reply in your Obsidian vault, send from the CLI.
 
-**Not** the Obsidian `Inbox.md` processor (that is [`~/Projects/inbox`](https://github.com/pxg/Inbox), command `vault-inbox`).
+**Repo / PyPI:** `inbox-cli` · **Command:** `inbox` · **Package:** `email_inbox`
 
-**PyPI:** [`inbox-cli`](https://pypi.org/project/inbox-cli/) (the name `inbox` on PyPI is the old Nylas SDK). **Command:** `inbox`.
+> **Not** the Obsidian vault inbox processor. That is [`~/Projects/inbox`](https://github.com/pxg/Inbox) (`vault-inbox`), which routes items from `Inbox.md`. This tool is for **Gmail**.
+
+The PyPI name `inbox` is taken by the old Nylas SDK; this project publishes as [`inbox-cli`](https://pypi.org/project/inbox-cli/).
 
 ## Requirements
 
@@ -30,7 +32,9 @@ inbox pick 2
 
 `email-inbox` remains as a deprecated alias for the same entry point.
 
-### Vault path
+### Vault path (reply drafts)
+
+Reply notes are written under your Obsidian vault (e.g. `emails/` or `Projects/<name>/emails/`).
 
 `--vault-root` → `INBOX_VAULT_ROOT` → `~/.config/inbox-cli/config.toml` → `~/Documents/Obsidian Vault`
 
