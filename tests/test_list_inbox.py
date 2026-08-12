@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 from email_inbox.accounts import AccountsConfig, Mailbox
-from email_inbox.gog import GogError
+from email_inbox.gog import GogError, GmailAuthRecord
 from email_inbox.list_inbox import fetch_combined_inbox
 
 
@@ -16,11 +16,25 @@ def _config() -> AccountsConfig:
     )
 
 
+def _auth_records(
+    *,
+    valid: set[str],
+    invalid: set[str] = frozenset(),
+    missing: set[str] = frozenset(),
+) -> dict[str, GmailAuthRecord]:
+    records: dict[str, GmailAuthRecord] = {}
+    for address in valid:
+        records[address] = GmailAuthRecord(address, True, True)
+    for address in invalid:
+        records[address] = GmailAuthRecord(address, True, False, error="invalid_grant")
+    return records
+
+
 @patch("email_inbox.gog.gmail_thread_get")
 @patch("email_inbox.list_inbox.gmail_search_unread")
-@patch("email_inbox.list_inbox.authorized_gmail_accounts")
+@patch("email_inbox.list_inbox.gmail_auth_records")
 def test_parallel_merge_and_sort(auth_mock, search_mock, thread_get_mock) -> None:
-    auth_mock.return_value = {"a@gmail.com", "b@co.uk"}
+    auth_mock.return_value = _auth_records(valid={"a@gmail.com", "b@co.uk"})
     thread_get_mock.return_value = {
         "thread": {
             "messages": [
@@ -73,18 +87,33 @@ def test_parallel_merge_and_sort(auth_mock, search_mock, thread_get_mock) -> Non
     assert result.rows[1].latest_message_id == "t1"
 
 
-@patch("email_inbox.list_inbox.authorized_gmail_accounts")
+@patch("email_inbox.list_inbox.gmail_auth_records")
 def test_skip_unauthorized(auth_mock) -> None:
-    auth_mock.return_value = {"a@gmail.com"}
+    auth_mock.return_value = _auth_records(valid={"a@gmail.com"})
     with patch("email_inbox.list_inbox.gmail_search_unread", return_value=[]):
         result = fetch_combined_inbox(_config())
     assert len(result.auth_warnings) == 1
     assert "b@co.uk" in result.auth_warnings[0]
+    assert result.auth_needed == ["b@co.uk"]
 
 
-@patch("email_inbox.list_inbox.authorized_gmail_accounts")
+@patch("email_inbox.list_inbox.gmail_auth_records")
+def test_invalid_refresh_token_skipped_with_warning(auth_mock) -> None:
+    auth_mock.return_value = _auth_records(valid={"a@gmail.com"}, invalid={"b@co.uk"})
+    with patch("email_inbox.list_inbox.gmail_search_unread", return_value=[]) as search_mock:
+        result = fetch_combined_inbox(_config())
+
+    search_mock.assert_called_once()
+    assert search_mock.call_args[0][0] == "a@gmail.com"
+    assert result.search_errors == []
+    assert len(result.auth_warnings) == 1
+    assert "b@co.uk authentication expired/invalid" in result.auth_warnings[0]
+    assert result.auth_needed == ["b@co.uk"]
+
+
+@patch("email_inbox.list_inbox.gmail_auth_records")
 def test_expired_token_promoted_to_auth_warning(auth_mock) -> None:
-    auth_mock.return_value = {"a@gmail.com", "b@co.uk"}
+    auth_mock.return_value = _auth_records(valid={"a@gmail.com", "b@co.uk"})
 
     def search_side_effect(mailbox: str, **kwargs):
         if mailbox == "b@co.uk":
@@ -98,3 +127,4 @@ def test_expired_token_promoted_to_auth_warning(auth_mock) -> None:
     assert len(result.auth_warnings) == 1
     assert "b@co.uk authentication expired/invalid" in result.auth_warnings[0]
     assert "gog auth add b@co.uk --services gmail" in result.auth_warnings[0]
+    assert result.auth_needed == ["b@co.uk"]

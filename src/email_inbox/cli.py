@@ -8,6 +8,7 @@ from pathlib import Path
 
 from email_inbox import __version__
 from email_inbox.accounts import AccountsConfig, load_accounts
+from email_inbox.auth_prompt import ensure_gmail_auth
 from email_inbox.config import load_config
 from email_inbox.formatting import InboxRow, render_inbox
 from email_inbox.interactive import run_pick_loop, should_interact
@@ -182,12 +183,20 @@ def _interactive_tty(args: argparse.Namespace) -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 
+def _print_list_warnings(result: ListResult) -> None:
+    for line in result.auth_warnings:
+        print(line, file=sys.stderr)
+    for line in result.search_errors:
+        print(f"search failed: {line}", file=sys.stderr)
+
+
 def _fetch_and_save_session(
     vault: Path,
     config: AccountsConfig,
     *,
     newer_than: str | None,
     max_per_mailbox: int | None,
+    quiet_warnings: bool = False,
 ) -> ListResult:
     """Fetch from gog and persist session without printing a table."""
     result = fetch_combined_inbox(
@@ -195,10 +204,8 @@ def _fetch_and_save_session(
         newer_than=newer_than,
         max_per_mailbox=max_per_mailbox,
     )
-    for line in result.auth_warnings:
-        print(line, file=sys.stderr)
-    for line in result.search_errors:
-        print(f"search failed: {line}", file=sys.stderr)
+    if not quiet_warnings:
+        _print_list_warnings(result)
     if result.rows:
         write_session(
             session_path(vault),
@@ -221,10 +228,7 @@ def _fetch_and_display_inbox(
         newer_than=newer_than,
         max_per_mailbox=max_per_mailbox,
     )
-    for line in result.auth_warnings:
-        print(line, file=sys.stderr)
-    for line in result.search_errors:
-        print(f"search failed: {line}", file=sys.stderr)
+    _print_list_warnings(result)
     render_inbox(result.rows, output_format=output_format)
     if result.rows:
         write_session(
@@ -244,16 +248,16 @@ def _cmd_list(args: argparse.Namespace) -> int:
     config = load_accounts(accounts_file)
     query = _inbox_query(args.newer_than)
 
+    if _interactive_tty(args) and not args.json:
+        ensure_gmail_auth(config.mailboxes)
+
     if args.json:
         result = fetch_combined_inbox(
             config,
             newer_than=args.newer_than,
             max_per_mailbox=args.max,
         )
-        for line in result.auth_warnings:
-            print(line, file=sys.stderr)
-        for line in result.search_errors:
-            print(f"search failed: {line}", file=sys.stderr)
+        _print_list_warnings(result)
         print(list_result_to_json(result, query=query))
         if result.rows:
             write_session(session_path(vault), build_session(result.rows, query=query))
@@ -263,6 +267,7 @@ def _cmd_list(args: argparse.Namespace) -> int:
             config,
             newer_than=args.newer_than,
             max_per_mailbox=args.max,
+            quiet_warnings=True,
         )
     elif _interactive_tty(args):
         result = _fetch_and_display_inbox(
@@ -294,20 +299,20 @@ def _cmd_list(args: argparse.Namespace) -> int:
     ):
         editor = _resolve_editor(args)
 
-        def refresh_rows() -> list[InboxRow]:
-            fresh = _fetch_and_save_session(
+        def refresh_inbox() -> ListResult:
+            return _fetch_and_save_session(
                 vault,
                 config,
                 newer_than=args.newer_than,
                 max_per_mailbox=args.max,
+                quiet_warnings=True,
             )
-            return fresh.rows
 
         return run_pick_loop(
             vault,
             result.rows,
             editor=editor,
-            refresh_rows=refresh_rows,
+            refresh_inbox=refresh_inbox,
             output_format=args.format,
             use_tui=use_tui,
         )

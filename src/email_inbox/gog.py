@@ -26,29 +26,71 @@ _AUTH_ERROR_MARKERS = (
     "401",
 )
 
-def authorized_gmail_accounts() -> set[str]:
+GOG_AUTH_CHECK_TIMEOUT_SEC = 30
+GOG_AUTH_ADD_TIMEOUT_SEC = 300
+
+
+@dataclass(frozen=True)
+class GmailAuthRecord:
+    email: str
+    has_gmail: bool
+    valid: bool
+    error: str | None = None
+
+
+def gmail_auth_records() -> dict[str, GmailAuthRecord]:
+    """Stored gog accounts with refresh-token health from gog auth list --check."""
     result = subprocess.run(
-        ["gog", "auth", "list", "-j"],
+        ["gog", "auth", "list", "--check", "-j"],
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=GOG_AUTH_CHECK_TIMEOUT_SEC,
         check=False,
     )
     if result.returncode != 0:
-        return set()
+        return {}
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
-        return set()
-    emails: set[str] = set()
+        return {}
+
+    records: dict[str, GmailAuthRecord] = {}
     for account in data.get("accounts") or []:
         if not isinstance(account, dict):
             continue
         email = account.get("email")
+        if not email:
+            continue
         services = account.get("services") or []
-        if email and "gmail" in services:
-            emails.add(str(email))
-    return emails
+        has_gmail = "gmail" in services
+        valid = bool(account.get("valid"))
+        error = account.get("error")
+        records[str(email)] = GmailAuthRecord(
+            email=str(email),
+            has_gmail=has_gmail,
+            valid=valid,
+            error=str(error) if error else None,
+        )
+    return records
+
+
+def authorized_gmail_accounts() -> set[str]:
+    """Mailboxes with Gmail service and a working refresh token."""
+    return {
+        email
+        for email, record in gmail_auth_records().items()
+        if record.has_gmail and record.valid
+    }
+
+
+def run_gog_auth_add(mailbox: str) -> bool:
+    """Run interactive gog auth add; inherit terminal for browser OAuth."""
+    result = subprocess.run(
+        ["gog", "auth", "add", mailbox, "--services", "gmail"],
+        timeout=GOG_AUTH_ADD_TIMEOUT_SEC,
+        check=False,
+    )
+    return result.returncode == 0
 
 
 def gmail_search_unread(

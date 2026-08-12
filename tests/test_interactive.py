@@ -4,6 +4,7 @@ from unittest.mock import patch
 from email_inbox.editor import EditorConfig
 from email_inbox.formatting import InboxRow
 from email_inbox.interactive import run_pick_loop, should_interact
+from email_inbox.list_inbox import ListResult
 
 
 def _row() -> InboxRow:
@@ -93,8 +94,8 @@ def test_after_pick_refresh_reprints_table(tmp_path: Path) -> None:
     reply.write_text("x")
     refreshed = [_row(), _row()]
 
-    def refresh() -> list[InboxRow]:
-        return refreshed
+    def refresh() -> ListResult:
+        return ListResult(refreshed, [], [], [])
 
     with (
         patch("builtins.input", side_effect=["1", "r", "q"]),
@@ -105,7 +106,7 @@ def test_after_pick_refresh_reprints_table(tmp_path: Path) -> None:
             tmp_path,
             [_row()],
             editor=EditorConfig.none(),
-            refresh_rows=refresh,
+            refresh_inbox=refresh,
         )
     assert code == 0
     render.assert_called_once_with(refreshed, output_format="auto")

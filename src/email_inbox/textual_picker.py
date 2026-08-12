@@ -34,6 +34,8 @@ from email_inbox.session import build_session, load_session, write_session
 from email_inbox.routing import list_project_options, project_from_input
 from email_inbox.send import AlreadySentError, is_reply_sent, push_draft, push_send
 from email_inbox.config import DEFAULT_AUTO_REFRESH_SECONDS
+from email_inbox.auth_prompt import ensure_gmail_auth_for_addresses
+from email_inbox.list_inbox import ListResult
 from email_inbox.theme import (
     BG,
     BORDER,
@@ -273,16 +275,16 @@ class InboxTuiApp(App[int]):
         rows: list[InboxRow],
         *,
         editor: EditorConfig,
-        refresh_rows: Callable[[], list[InboxRow]] | None = None,
+        refresh_inbox: Callable[[], ListResult] | None = None,
         auto_refresh_seconds: int = DEFAULT_AUTO_REFRESH_SECONDS,
     ) -> None:
         super().__init__()
         self.vault_root = vault_root
         self.rows = list(rows)
         self.editor = editor
-        self.refresh_rows = refresh_rows
+        self.refresh_inbox = refresh_inbox
         self.auto_refresh_seconds = (
-            auto_refresh_seconds if refresh_rows is not None else 0
+            auto_refresh_seconds if refresh_inbox is not None else 0
         )
         self.reply_path: Path | None = None
         self.open_row_index: int | None = None
@@ -393,7 +395,7 @@ class InboxTuiApp(App[int]):
         self._update_ui()
 
     def _auto_refresh_tick(self) -> None:
-        if not self.refresh_rows or self.auto_refresh_seconds <= 0:
+        if not self.refresh_inbox or self.auto_refresh_seconds <= 0:
             return
         if (
             self._busy_message
@@ -440,7 +442,7 @@ class InboxTuiApp(App[int]):
             return Text(f"  * {msg} *", style=HEADER)
         if not self.rows:
             cmds: list[tuple[str, str]] = []
-            if self.refresh_rows:
+            if self.refresh_inbox:
                 cmds.append(("r", "refresh"))
             cmds.append(("q", "quit"))
             prefix = Text("  INBOX ZERO — ", style=HEADER)
@@ -468,7 +470,7 @@ class InboxTuiApp(App[int]):
             ("o", "open"),
             ("x", "read"),
         ]
-        if self.refresh_rows:
+        if self.refresh_inbox:
             cmds.append(("r", "refresh"))
         cmds.append(("q", "quit"))
         line = Text("  ")
@@ -635,35 +637,45 @@ class InboxTuiApp(App[int]):
             self._update_ui()
             self.notify(str(exc), severity="error", timeout=6)
 
+    def _maybe_reauth(self, result: ListResult) -> ListResult:
+        if not result.auth_needed:
+            return result
+        with self.suspend():
+            ensure_gmail_auth_for_addresses(result.auth_needed)
+        if self.refresh_inbox is None:
+            return result
+        return self.refresh_inbox()
+
     def action_refresh_inbox(self) -> None:
-        if self._busy_message or self.refresh_rows is None:
+        if self._busy_message or self.refresh_inbox is None:
             return
         self.run_worker(self._do_refresh_inbox(), exclusive=True, group="inbox_refresh")
 
     async def _do_refresh_inbox(self) -> None:
-        if self.refresh_rows is None:
+        if self.refresh_inbox is None:
             return
         self._set_busy("Refreshing inbox…")
         try:
-            rows = await asyncio.to_thread(self.refresh_rows)
+            result = await asyncio.to_thread(self.refresh_inbox)
+            result = self._maybe_reauth(result)
         except Exception as exc:
             self.notify(str(exc), severity="error", timeout=6)
             return
         finally:
             self._clear_busy()
-        self.rows = rows
+        self.rows = result.rows
         self._apply_table_ui()
 
     async def _do_auto_refresh(self) -> None:
-        if self.refresh_rows is None:
+        if self.refresh_inbox is None:
             return
         if self.mode != "browse" or self._busy_message:
             return
         try:
-            rows = await asyncio.to_thread(self.refresh_rows)
+            result = await asyncio.to_thread(self.refresh_inbox)
         except Exception:
             return
-        rows = self._filter_recently_dismissed(rows)
+        rows = self._filter_recently_dismissed(result.rows)
         self._apply_auto_refresh_rows(rows)
 
     def action_back_to_browse(self) -> None:
@@ -745,7 +757,7 @@ def run_textual_inbox_session(
     rows: list[InboxRow],
     *,
     editor: EditorConfig,
-    refresh_rows: Callable[[], list[InboxRow]] | None = None,
+    refresh_inbox: Callable[[], ListResult] | None = None,
     auto_refresh_seconds: int = DEFAULT_AUTO_REFRESH_SECONDS,
 ) -> int:
     """Run full Textual inbox session until user quits."""
@@ -755,7 +767,7 @@ def run_textual_inbox_session(
         vault_root,
         rows,
         editor=editor,
-        refresh_rows=refresh_rows,
+        refresh_inbox=refresh_inbox,
         auto_refresh_seconds=auto_refresh_seconds,
     )
     return app.run() or 0

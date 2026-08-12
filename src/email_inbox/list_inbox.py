@@ -12,8 +12,8 @@ from email_inbox.formatting import InboxRow
 from email_inbox.gog import (
     GogError,
     auth_warning,
-    authorized_gmail_accounts,
     enrich_multi_message_rows,
+    gmail_auth_records,
     gmail_search_unread,
     inbox_row_message_fields_from_search,
     is_auth_error,
@@ -25,6 +25,7 @@ class ListResult:
     rows: list[InboxRow]
     auth_warnings: list[str]
     search_errors: list[str]
+    auth_needed: list[str]
 
 
 def fetch_combined_inbox(
@@ -34,22 +35,34 @@ def fetch_combined_inbox(
     max_per_mailbox: int | None = None,
 ) -> ListResult:
     max_n = max_per_mailbox or config.max_unread_per_mailbox
-    authorized = authorized_gmail_accounts()
+    auth_records = gmail_auth_records()
     auth_warnings: list[str] = []
+    auth_needed: list[str] = []
     search_errors: list[str] = []
     threads_by_key: dict[tuple[str, str], InboxRow] = {}
 
     mailboxes_to_query: list[Mailbox] = []
     for mb in config.mailboxes:
-        if mb.address not in authorized:
+        record = auth_records.get(mb.address)
+        if record is None or not record.has_gmail:
             auth_warnings.append(
                 f"{mb.address} not authorized — gog auth add {mb.address} --services gmail"
             )
+            auth_needed.append(mb.address)
+            continue
+        if not record.valid:
+            auth_warnings.append(auth_warning(mb.address, record.error or "invalid token"))
+            auth_needed.append(mb.address)
             continue
         mailboxes_to_query.append(mb)
 
     if not mailboxes_to_query:
-        return ListResult(rows=[], auth_warnings=auth_warnings, search_errors=search_errors)
+        return ListResult(
+            rows=[],
+            auth_warnings=auth_warnings,
+            search_errors=search_errors,
+            auth_needed=auth_needed,
+        )
 
     with ThreadPoolExecutor(max_workers=len(mailboxes_to_query)) as pool:
         futures = {
@@ -68,6 +81,7 @@ def fetch_combined_inbox(
             except GogError as exc:
                 if is_auth_error(str(exc)):
                     auth_warnings.append(auth_warning(mb.address, str(exc)))
+                    auth_needed.append(mb.address)
                 else:
                     search_errors.append(f"{mb.address}: {exc}")
                 continue
@@ -80,6 +94,7 @@ def fetch_combined_inbox(
         rows=merged,
         auth_warnings=auth_warnings,
         search_errors=search_errors,
+        auth_needed=auth_needed,
     )
 
 
@@ -113,4 +128,5 @@ def list_result_to_json(result: ListResult, *, query: str) -> str:
     payload = build_session(result.rows, query=query)
     payload["auth_warnings"] = result.auth_warnings
     payload["search_errors"] = result.search_errors
+    payload["auth_needed"] = result.auth_needed
     return json.dumps(payload, indent=2)

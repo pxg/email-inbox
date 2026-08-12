@@ -15,7 +15,7 @@ def test_default_command_is_list(tmp_path: Path) -> None:
     gmail_dir.mkdir(parents=True)
     (gmail_dir / "accounts.md").write_text(fixture.read_text())
 
-    with patch("email_inbox.cli.fetch_combined_inbox", return_value=ListResult([], [], [])):
+    with patch("email_inbox.cli.fetch_combined_inbox", return_value=ListResult([], [], [], [])):
         code = run(["--vault-root", str(vault), "--no-interactive"])
     assert code == 2
 
@@ -28,13 +28,15 @@ def test_list_empty_inbox_starts_tui_on_tty(tmp_path: Path) -> None:
     (gmail_dir / "accounts.md").write_text(fixture.read_text())
 
     with (
-        patch("email_inbox.cli.fetch_combined_inbox", return_value=ListResult([], [], [])),
+        patch("email_inbox.cli.ensure_gmail_auth") as ensure_auth,
+        patch("email_inbox.cli.fetch_combined_inbox", return_value=ListResult([], [], [], [])),
         patch.object(sys.stdin, "isatty", return_value=True),
         patch.object(sys.stdout, "isatty", return_value=True),
         patch("email_inbox.cli.run_pick_loop", return_value=0) as run_loop,
     ):
         code = run(["list", "--vault-root", str(vault)])
     assert code == 0
+    ensure_auth.assert_called_once()
     run_loop.assert_called_once()
     assert run_loop.call_args[0][1] == []
 
@@ -46,7 +48,7 @@ def test_list_empty_inbox(tmp_path: Path) -> None:
     gmail_dir.mkdir(parents=True)
     (gmail_dir / "accounts.md").write_text(fixture.read_text())
 
-    with patch("email_inbox.cli.fetch_combined_inbox", return_value=ListResult([], [], [])):
+    with patch("email_inbox.cli.fetch_combined_inbox", return_value=ListResult([], [], [], [])):
         code = run(["list", "--vault-root", str(vault)])
     assert code == 2
 

@@ -1,6 +1,6 @@
 # Email Inbox
 
-Gmail unread inbox TUI via [gog](https://github.com/steipete/gog). Pick a thread, draft a reply in your Obsidian vault, send from the CLI.
+Gmail unread inbox TUI via [gog](https://github.com/openclaw/gogcli). Pick a thread, draft a reply in your Obsidian vault, send from the CLI.
 
 **Repo / PyPI:** `inbox-cli` · **Command:** `inbox` · **Package:** `email_inbox`
 
@@ -104,8 +104,16 @@ After dependency changes: `uv sync` then `uv tool install --force -e .`
 
 ## Troubleshooting auth
 
-If an account token expires, `inbox list` now prints an auth warning with a ready-to-run reauth command, for example:
+On an interactive TTY, `inbox list` checks `gog auth list --check` before fetching. Expired or missing accounts get a prompt:
 
-```bash
-pete@petegraham.co.uk authentication expired/invalid, run: gog auth add pete@petegraham.co.uk --services gmail
+```text
+Gmail sign-in required for you@example.com
+  Enter — open Google sign-in
+  q — skip this account
 ```
+
+Press **Enter** to run `gog auth add <address> --services gmail` (browser OAuth). Press **q** to skip that account and continue with the rest.
+
+The same prompt appears on manual refresh (**r**) in the TUI if a token expires mid-session.
+
+Non-interactive runs (`--json`, piped output) still print warnings to stderr instead of prompting.

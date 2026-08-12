@@ -7,7 +7,12 @@ from email_inbox.formatting import InboxRow
 from textual.widgets import Static
 
 from email_inbox.editor import EditorConfig
+from email_inbox.list_inbox import ListResult
 from email_inbox.textual_picker import InboxTuiApp, InboxZeroScreen
+
+
+def _list_result(rows: list[InboxRow]) -> ListResult:
+    return ListResult(rows=rows, auth_warnings=[], search_errors=[], auth_needed=[])
 
 
 def _row(subject: str = "Hello") -> InboxRow:
@@ -108,7 +113,7 @@ def test_hint_bar_shows_browse_actions_without_subject() -> None:
             Path("/tmp"),
             [_row()],
             editor=EditorConfig.none(),
-            refresh_rows=lambda: [_row()],
+            refresh_inbox=lambda: _list_result([_row()]),
         )
         async with app.run_test():
             hint = app.query_one("#hint_bar", Static)
@@ -267,7 +272,7 @@ def test_auto_refresh_skips_action_mode() -> None:
             Path("/tmp"),
             [_row()],
             editor=EditorConfig.none(),
-            refresh_rows=lambda: [_row(), _row("New")],
+            refresh_inbox=lambda: _list_result([_row(), _row("New")]),
             auto_refresh_seconds=60,
         )
         app.mode = "action"
@@ -311,7 +316,7 @@ def test_auto_refresh_no_timer_when_disabled() -> None:
             Path("/tmp"),
             [_row()],
             editor=EditorConfig.none(),
-            refresh_rows=lambda: [_row()],
+            refresh_inbox=lambda: _list_result([_row()]),
             auto_refresh_seconds=0,
         )
         with patch.object(app, "set_interval") as set_interval:
@@ -328,7 +333,7 @@ def test_refresh_empty_inbox_does_not_celebrate() -> None:
             Path("/tmp"),
             [_row()],
             editor=EditorConfig.none(),
-            refresh_rows=lambda: [],
+            refresh_inbox=lambda: _list_result([]),
         )
         with patch.object(InboxTuiApp, "push_screen_wait", autospec=True) as push_screen:
             async with app.run_test() as pilot:
